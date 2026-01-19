@@ -211,13 +211,25 @@ export async function* readBranches(
         };
       }
 
+      const branchInfo = await octokit.request(
+        'GET /repos/{owner}/{repo}/branches/{branch}',
+        {
+          owner: repo.owner,
+          repo: repo.repo,
+          branch: name,
+          headers,
+        }
+      );
+
+      const isProtected = branchInfo.data.protected;
+
       yield {
         date: Date.parse(authoredDate),
         branchName: name,
         prefix,
         commitId: oid,
         author: branchAuthor,
-        isProtected: refUpdateRule !== null,
+        isProtected, // <-- from REST API, not from refUpdateRule
         openPrs: associatedPullRequests.nodes.length > 0,
       };
     }
