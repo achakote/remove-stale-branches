@@ -162,11 +162,23 @@ async function planBranchAction(
   if (filters.allowedBranchesRegex && !filters.allowedBranchesRegex.test(branch.branchName)) {
     return skip(`branch ${branch.branchName} is outside of branch selection`);
   }
+
+  console.log(`\n=== Checking branch: ${branch.branchName} ===`);
+  console.log(`filters.deniedBranchesRegex: ${filters.deniedBranchesRegex}`);
+  console.log(`filters.exemptProtectedBranches: ${filters.exemptProtectedBranches}`);
+  console.log(`branch.isProtected: ${branch.isProtected}`);
+
+  if (filters.deniedBranchesRegex) {
+    console.log(`Does regex match? ${filters.deniedBranchesRegex.test(branch.branchName)}`);
+  }
+
   if (filters.deniedBranchesRegex && filters.deniedBranchesRegex.test(branch.branchName)) {
+    console.log(`✅ SKIPPING via regex: ${branch.branchName}`);
     return skip(`branch ${branch.branchName} is exempted`);
   }
 
   if (filters.exemptProtectedBranches && branch.isProtected) {
+    console.log(`✅ SKIPPING via protection: ${branch.branchName}`);
     return skip(`branch ${branch.branchName} is protected`);
   }
 
