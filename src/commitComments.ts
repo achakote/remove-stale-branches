@@ -186,7 +186,7 @@ export class TaggedCommitComments {
 
     console.log(
       `[getProtectedBranches] Found ${data.length} protected branches:`,
-      data.map((b) => b.name)
+      data.map((b: { name: string }) => b.name)
     );
     return data;
   }

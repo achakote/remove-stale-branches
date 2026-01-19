@@ -13009,7 +13009,7 @@ module.exports = {
 
 
 const { parseSetCookie } = __nccwpck_require__(8915)
-const { stringify, getHeadersList } = __nccwpck_require__(3834)
+const { stringify } = __nccwpck_require__(3834)
 const { webidl } = __nccwpck_require__(4222)
 const { Headers } = __nccwpck_require__(6349)
 
@@ -13085,14 +13085,13 @@ function getSetCookies (headers) {
 
   webidl.brandCheck(headers, Headers, { strict: false })
 
-  const cookies = getHeadersList(headers).cookies
+  const cookies = headers.getSetCookie()
 
   if (!cookies) {
     return []
   }
 
-  // In older versions of undici, cookies is a list of name:value.
-  return cookies.map((pair) => parseSetCookie(Array.isArray(pair) ? pair[1] : pair))
+  return cookies.map((pair) => parseSetCookie(pair))
 }
 
 /**
@@ -13520,14 +13519,15 @@ module.exports = {
 /***/ }),
 
 /***/ 3834:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+/***/ ((module) => {
 
 "use strict";
 
 
-const assert = __nccwpck_require__(2613)
-const { kHeadersList } = __nccwpck_require__(6443)
-
+/**
+ * @param {string} value
+ * @returns {boolean}
+ */
 function isCTLExcludingHtab (value) {
   if (value.length === 0) {
     return false
@@ -13788,31 +13788,13 @@ function stringify (cookie) {
   return out.join('; ')
 }
 
-let kHeadersListNode
-
-function getHeadersList (headers) {
-  if (headers[kHeadersList]) {
-    return headers[kHeadersList]
-  }
-
-  if (!kHeadersListNode) {
-    kHeadersListNode = Object.getOwnPropertySymbols(headers).find(
-      (symbol) => symbol.description === 'headers list'
-    )
-
-    assert(kHeadersListNode, 'Headers cannot be parsed')
-  }
-
-  const headersList = headers[kHeadersListNode]
-  assert(headersList)
-
-  return headersList
-}
-
 module.exports = {
   isCTLExcludingHtab,
-  stringify,
-  getHeadersList
+  validateCookieName,
+  validateCookiePath,
+  validateCookieValue,
+  toIMFDate,
+  stringify
 }
 
 
@@ -17816,6 +17798,7 @@ const {
   isValidHeaderName,
   isValidHeaderValue
 } = __nccwpck_require__(5523)
+const util = __nccwpck_require__(9023)
 const { webidl } = __nccwpck_require__(4222)
 const assert = __nccwpck_require__(2613)
 
@@ -18369,6 +18352,9 @@ Object.defineProperties(Headers.prototype, {
   [Symbol.toStringTag]: {
     value: 'Headers',
     configurable: true
+  },
+  [util.inspect.custom]: {
+    enumerable: false
   }
 })
 
@@ -27545,6 +27531,20 @@ class Pool extends PoolBase {
       ? { ...options.interceptors }
       : undefined
     this[kFactory] = factory
+
+    this.on('connectionError', (origin, targets, error) => {
+      // If a connection error occurs, we remove the client from the pool,
+      // and emit a connectionError event. They will not be re-used.
+      // Fixes https://github.com/nodejs/undici/issues/3895
+      for (const target of targets) {
+        // Do not use kRemoveClient here, as it will close the client,
+        // but the client cannot be closed in this state.
+        const idx = this[kClients].indexOf(target)
+        if (idx !== -1) {
+          this[kClients].splice(idx, 1)
+        }
+      }
+    })
   }
 
   [kGetDispatcher] () {
@@ -29951,36 +29951,57 @@ class TaggedCommitComments {
     }
     getCommitCommentsWithTag(_a) {
         return __awaiter(this, arguments, void 0, function* ({ commentTag, commitSHA, }) {
+            console.log(`[getCommitCommentsWithTag] Fetching comments for commit ${commitSHA} with tag [${commentTag}]`);
             const messages = (yield this.octokit.request("GET /repos/{owner}/{repo}/commits/{commit_sha}/comments", Object.assign(Object.assign({ headers: this.headers }, this.repo), { commit_sha: commitSHA }))).data;
-            return messages.filter((comment) => comment.body.startsWith("[" + commentTag + "]"));
+            const filtered = messages.filter((comment) => comment.body.startsWith("[" + commentTag + "]"));
+            console.log(`[getCommitCommentsWithTag] Found ${messages.length} total comments, ${filtered.length} with tag [${commentTag}]`);
+            return filtered;
         });
     }
     addCommitComments(_a) {
         return __awaiter(this, arguments, void 0, function* ({ commentTag, commentBody, commitSHA, }) {
             const body = `[${commentTag}]\r\n\r\n${commentBody}`;
+            console.log(`[addCommitComments] 🏷️  Adding comment to commit ${commitSHA}`);
+            console.log(`[addCommitComments]   Tag: [${commentTag}]`);
+            console.log(`[addCommitComments]   Repo: ${this.repo.owner}/${this.repo.repo}`);
+            console.log(`[addCommitComments]   Comment preview: ${commentBody.substring(0, 100)}...`);
             yield this.octokit.request("POST /repos/{owner}/{repo}/commits/{commit_sha}/comments", Object.assign(Object.assign({ headers: this.headers }, this.repo), { commit_sha: commitSHA, body }));
+            console.log(`[addCommitComments] ✅ Comment added successfully`);
         });
     }
     deleteCommitComments(_a) {
         return __awaiter(this, arguments, void 0, function* ({ commentId }) {
-            return this.octokit.request("DELETE /repos/{owner}/{repo}/comments/{comment_id}", Object.assign(Object.assign({ headers: this.headers }, this.repo), { comment_id: commentId }));
+            console.log(`[deleteCommitComments] 🗑️  Deleting comment ID: ${commentId}`);
+            const result = yield this.octokit.request("DELETE /repos/{owner}/{repo}/comments/{comment_id}", Object.assign(Object.assign({ headers: this.headers }, this.repo), { comment_id: commentId }));
+            console.log(`[deleteCommitComments] ✅ Comment deleted successfully`);
+            return result;
         });
     }
     getBranch(branch) {
         return __awaiter(this, void 0, void 0, function* () {
             const ref = branch.prefix.replace(/^refs\//, "") + branch.branchName;
+            console.log(`[getBranch] Fetching branch info for ref: ${ref}`);
             return this.octokit.request("GET /repos/{owner}/{repo}/git/refs/{ref}", Object.assign(Object.assign({ headers: this.headers }, this.repo), { ref }));
         });
     }
     deleteBranch(branch) {
         return __awaiter(this, void 0, void 0, function* () {
             const ref = branch.prefix.replace(/^refs\//, "") + branch.branchName;
-            return this.octokit.request("DELETE /repos/{owner}/{repo}/git/refs/{ref}", Object.assign(Object.assign({ headers: this.headers }, this.repo), { ref }));
+            console.log(`[deleteBranch] 🔥 DELETING BRANCH: ${branch.branchName}`);
+            console.log(`[deleteBranch]   Ref: ${ref}`);
+            console.log(`[deleteBranch]   Repo: ${this.repo.owner}/${this.repo.repo}`);
+            console.log(`[deleteBranch]   IsProtected: ${branch.isProtected}`);
+            console.log(`[deleteBranch]   CommitID: ${branch.commitId}`);
+            const result = yield this.octokit.request("DELETE /repos/{owner}/{repo}/git/refs/{ref}", Object.assign(Object.assign({ headers: this.headers }, this.repo), { ref }));
+            console.log(`[deleteBranch] ✅ Branch deleted successfully`);
+            return result;
         });
     }
     getProtectedBranches() {
         return __awaiter(this, void 0, void 0, function* () {
+            console.log(`[getProtectedBranches] Fetching protected branches for ${this.repo.owner}/${this.repo.repo}`);
             const { data } = yield this.octokit.request("GET /repos/{owner}/{repo}/branches?protected=true", Object.assign({ headers: this.headers }, this.repo));
+            console.log(`[getProtectedBranches] Found ${data.length} protected branches:`, data.map((b) => b.name));
             return data;
         });
     }
@@ -30243,13 +30264,21 @@ function readBranches(octokit, headers, repo, organization) {
                         belongsToOrganization: Boolean((_d = (_c = author.user) === null || _c === void 0 ? void 0 : _c.organization) === null || _d === void 0 ? void 0 : _d.id),
                     };
                 }
+                const branchInfo = yield __await(octokit.request('GET /repos/{owner}/{repo}/branches/{branch}', {
+                    owner: repo.owner,
+                    repo: repo.repo,
+                    branch: name,
+                    headers,
+                }));
+                const isProtected = branchInfo.data.protected;
+                console.log(`Branch: ${name}, isProtected: ${isProtected}, API response:`, branchInfo.data.protected);
                 yield yield __await({
                     date: Date.parse(authoredDate),
                     branchName: name,
                     prefix,
                     commitId: oid,
                     author: branchAuthor,
-                    isProtected: refUpdateRule !== null,
+                    isProtected,
                     openPrs: associatedPullRequests.nodes.length > 0,
                 });
             }
@@ -30392,7 +30421,62 @@ function getCommitCommentsForBranch(commitComments, branch) {
         });
     });
 }
-function planBranchAction(now, branch, filters, commitComments, params) {
+function planBranchAction(branch, filters, now, alreadyMarkedStale, plan, params) {
+    console.log(`\n=== planBranchAction for branch: ${branch.branchName} ===`);
+    console.log(`  branch.isProtected: ${branch.isProtected}`);
+    console.log(`  filters.exemptProtectedBranches: ${filters.exemptProtectedBranches}`);
+    console.log(`  alreadyMarkedStale: ${alreadyMarkedStale}`);
+    console.log(`  filters.deniedBranchesRegex: ${filters.deniedBranchesRegex}`);
+    // Check if branch should be skipped due to regex
+    if (filters.deniedBranchesRegex) {
+        const regexMatch = filters.deniedBranchesRegex.test(branch.branchName);
+        console.log(`  deniedBranchesRegex test: ${regexMatch}`);
+        if (regexMatch) {
+            console.log(`  ✅ SKIPPING (denied by regex): ${branch.branchName}`);
+            return skip(`branch ${branch.branchName} is exempted`);
+        }
+    }
+    // Check if branch should be skipped due to protection
+    if (filters.exemptProtectedBranches && branch.isProtected) {
+        console.log(`  ✅ SKIPPING (protected branch): ${branch.branchName}`);
+        return skip(`branch ${branch.branchName} is protected`);
+    }
+    // Check open PRs
+    if (branch.openPrs) {
+        console.log(`  ✅ SKIPPING (has open PRs): ${branch.branchName}`);
+        return skip(`branch ${branch.branchName} has an open PR`);
+    }
+    // Check if allowedBranchesRegex is set and branch doesn't match
+    if (filters.allowedBranchesRegex &&
+        !filters.allowedBranchesRegex.test(branch.branchName)) {
+        console.log(`  ✅ SKIPPING (not in allowed regex): ${branch.branchName}`);
+        return skip(`branch ${branch.branchName} is not selected`);
+    }
+    // Check if author is allowed
+    if (filters.authorsRegex && branch.author && !filters.authorsRegex.test(branch.author.username || branch.author.email || "")) {
+        console.log(`  ✅ SKIPPING (author not allowed): ${branch.branchName}`);
+        return skip(`branch author ${branch.author.username || branch.author.email} is not selected`);
+    }
+    // Check if already marked stale and past delete date
+    if (alreadyMarkedStale && now > plan.cutoffTime) {
+        console.log(`  ⚠️  REMOVING (marked stale and past cutoff): ${branch.branchName}`);
+        console.log(`    Current time: ${new Date(now).toISOString()}`);
+        console.log(`    Cutoff time: ${new Date(plan.cutoffTime).toISOString()}`);
+        console.log(`    IsProtected: ${branch.isProtected} (THIS SHOULD BE TRUE IF PROTECTED!)`);
+        return { action: "remove", lastCommentTime: 0, cutoffTime: plan.cutoffTime, comments: [] };
+    }
+    // Check if stale
+    if (branch.date < filters.staleCutoff) {
+        console.log(`  📌 MARKING AS STALE: ${branch.branchName}`);
+        return {
+            action: "mark stale",
+            cutoffTime: (0, date_fns_1.addDays)(now, params.daysBeforeBranchDelete).getTime(),
+        };
+    }
+    console.log(`  ℹ️  NO ACTION: ${branch.branchName}`);
+    return skip(`branch ${branch.branchName} is not stale`);
+}
+function planBranchActionOld(now, branch, filters, commitComments, params) {
     return __awaiter(this, void 0, void 0, function* () {
         var _a, _b;
         if (branch.author &&
@@ -30414,10 +30498,19 @@ function planBranchAction(now, branch, filters, commitComments, params) {
         if (filters.allowedBranchesRegex && !filters.allowedBranchesRegex.test(branch.branchName)) {
             return skip(`branch ${branch.branchName} is outside of branch selection`);
         }
+        console.log(`\n=== Checking branch: ${branch.branchName} ===`);
+        console.log(`filters.deniedBranchesRegex: ${filters.deniedBranchesRegex}`);
+        console.log(`filters.exemptProtectedBranches: ${filters.exemptProtectedBranches}`);
+        console.log(`branch.isProtected: ${branch.isProtected}`);
+        if (filters.deniedBranchesRegex) {
+            console.log(`Does regex match? ${filters.deniedBranchesRegex.test(branch.branchName)}`);
+        }
         if (filters.deniedBranchesRegex && filters.deniedBranchesRegex.test(branch.branchName)) {
+            console.log(`✅ SKIPPING via regex: ${branch.branchName}`);
             return skip(`branch ${branch.branchName} is exempted`);
         }
         if (filters.exemptProtectedBranches && branch.isProtected) {
+            console.log(`✅ SKIPPING via protection: ${branch.branchName}`);
             return skip(`branch ${branch.branchName} is protected`);
         }
         if (branch.date >= filters.staleCutoff) {
@@ -30518,7 +30611,7 @@ function removeStaleBranches(octokit, params) {
                 _d = false;
                 const branch = _c;
                 summary.scanned++;
-                const plan = yield planBranchAction(now.getTime(), branch, filters, commitComments, params);
+                const plan = yield planBranchAction(branch, filters, now.getTime(), false, { cutoffTime: 0 }, params);
                 summary[plan.action]++;
                 core.startGroup(`${icons[plan.action]} branch ${branch.branchName}`);
                 try {

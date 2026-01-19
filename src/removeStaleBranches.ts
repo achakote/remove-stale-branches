@@ -130,7 +130,8 @@ function planBranchAction(
   filters: BranchFilters,
   now: number,
   alreadyMarkedStale: boolean,
-  plan: { cutoffTime: number }
+  plan: { cutoffTime: number },
+  params: Params
 ): Plan {
   console.log(`\n=== planBranchAction for branch: ${branch.branchName} ===`);
   console.log(`  branch.isProtected: ${branch.isProtected}`);
@@ -170,9 +171,9 @@ function planBranchAction(
   }
 
   // Check if author is allowed
-  if (filters.authorsRegex && !filters.authorsRegex.test(branch.author)) {
+  if (filters.authorsRegex && branch.author && !filters.authorsRegex.test(branch.author.username || branch.author.email || "")) {
     console.log(`  ✅ SKIPPING (author not allowed): ${branch.branchName}`);
-    return skip(`branch author ${branch.author} is not selected`);
+    return skip(`branch author ${branch.author.username || branch.author.email} is not selected`);
   }
 
   // Check if already marked stale and past delete date
@@ -181,7 +182,7 @@ function planBranchAction(
     console.log(`    Current time: ${new Date(now).toISOString()}`);
     console.log(`    Cutoff time: ${new Date(plan.cutoffTime).toISOString()}`);
     console.log(`    IsProtected: ${branch.isProtected} (THIS SHOULD BE TRUE IF PROTECTED!)`);
-    return { action: "remove" };
+    return { action: "remove", lastCommentTime: 0, cutoffTime: plan.cutoffTime, comments: [] };
   }
 
   // Check if stale
@@ -390,7 +391,8 @@ export async function removeStaleBranches(
       filters,
       now.getTime(),
       false,
-      { cutoffTime: 0 }
+      { cutoffTime: 0 },
+      params
     );
     summary[plan.action]++;
     core.startGroup(`${icons[plan.action]} branch ${branch.branchName}`);
