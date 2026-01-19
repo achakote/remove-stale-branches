@@ -64,6 +64,10 @@ export class TaggedCommitComments {
     commentTag,
     commitSHA,
   }: Commit & CommentTag) {
+    console.log(
+      `[getCommitCommentsWithTag] Fetching comments for commit ${commitSHA} with tag [${commentTag}]`
+    );
+
     const messages = (
       await this.octokit.request(
         "GET /repos/{owner}/{repo}/commits/{commit_sha}/comments",
@@ -75,9 +79,15 @@ export class TaggedCommitComments {
       )
     ).data;
 
-    return messages.filter((comment) =>
+    const filtered = messages.filter((comment) =>
       comment.body.startsWith("[" + commentTag + "]")
     );
+
+    console.log(
+      `[getCommitCommentsWithTag] Found ${messages.length} total comments, ${filtered.length} with tag [${commentTag}]`
+    );
+
+    return filtered;
   }
 
   async addCommitComments({
@@ -86,6 +96,19 @@ export class TaggedCommitComments {
     commitSHA,
   }: Commit & CommentTag & CommentBody) {
     const body = `[${commentTag}]\r\n\r\n${commentBody}`;
+
+    console.log(`[addCommitComments] 🏷️  Adding comment to commit ${commitSHA}`);
+    console.log(`[addCommitComments]   Tag: [${commentTag}]`);
+    console.log(
+      `[addCommitComments]   Repo: ${this.repo.owner}/${this.repo.repo}`
+    );
+    console.log(
+      `[addCommitComments]   Comment preview: ${commentBody.substring(
+        0,
+        100
+      )}...`
+    );
+
     await this.octokit.request(
       "POST /repos/{owner}/{repo}/commits/{commit_sha}/comments",
       {
@@ -95,10 +118,14 @@ export class TaggedCommitComments {
         body,
       }
     );
+
+    console.log(`[addCommitComments] ✅ Comment added successfully`);
   }
 
   async deleteCommitComments({ commentId }: CommentId) {
-    return this.octokit.request(
+    console.log(`[deleteCommitComments] 🗑️  Deleting comment ID: ${commentId}`);
+
+    const result = await this.octokit.request(
       "DELETE /repos/{owner}/{repo}/comments/{comment_id}",
       {
         headers: this.headers,
@@ -106,10 +133,15 @@ export class TaggedCommitComments {
         comment_id: commentId,
       }
     );
+
+    console.log(`[deleteCommitComments] ✅ Comment deleted successfully`);
+    return result;
   }
 
   async getBranch(branch: Branch) {
     const ref = branch.prefix.replace(/^refs\//, "") + branch.branchName;
+    console.log(`[getBranch] Fetching branch info for ref: ${ref}`);
+
     return this.octokit.request("GET /repos/{owner}/{repo}/git/refs/{ref}", {
       headers: this.headers,
       ...this.repo,
@@ -119,14 +151,31 @@ export class TaggedCommitComments {
 
   async deleteBranch(branch: Branch) {
     const ref = branch.prefix.replace(/^refs\//, "") + branch.branchName;
-    return this.octokit.request("DELETE /repos/{owner}/{repo}/git/refs/{ref}", {
-      headers: this.headers,
-      ...this.repo,
-      ref,
-    });
+
+    console.log(`[deleteBranch] 🔥 DELETING BRANCH: ${branch.branchName}`);
+    console.log(`[deleteBranch]   Ref: ${ref}`);
+    console.log(`[deleteBranch]   Repo: ${this.repo.owner}/${this.repo.repo}`);
+    console.log(`[deleteBranch]   IsProtected: ${branch.isProtected}`);
+    console.log(`[deleteBranch]   CommitID: ${branch.commitId}`);
+
+    const result = await this.octokit.request(
+      "DELETE /repos/{owner}/{repo}/git/refs/{ref}",
+      {
+        headers: this.headers,
+        ...this.repo,
+        ref,
+      }
+    );
+
+    console.log(`[deleteBranch] ✅ Branch deleted successfully`);
+    return result;
   }
 
   async getProtectedBranches() {
+    console.log(
+      `[getProtectedBranches] Fetching protected branches for ${this.repo.owner}/${this.repo.repo}`
+    );
+
     const { data } = await this.octokit.request(
       "GET /repos/{owner}/{repo}/branches?protected=true",
       {
@@ -135,6 +184,10 @@ export class TaggedCommitComments {
       }
     );
 
+    console.log(
+      `[getProtectedBranches] Found ${data.length} protected branches:`,
+      data.map((b) => b.name)
+    );
     return data;
   }
 }
