@@ -125,7 +125,79 @@ async function getCommitCommentsForBranch(
   });
 }
 
-async function planBranchAction(
+function planBranchAction(
+  branch: Branch,
+  filters: BranchFilters,
+  now: number,
+  alreadyMarkedStale: boolean,
+  plan: { cutoffTime: number }
+): Plan {
+  console.log(`\n=== planBranchAction for branch: ${branch.branchName} ===`);
+  console.log(`  branch.isProtected: ${branch.isProtected}`);
+  console.log(`  filters.exemptProtectedBranches: ${filters.exemptProtectedBranches}`);
+  console.log(`  alreadyMarkedStale: ${alreadyMarkedStale}`);
+  console.log(`  filters.deniedBranchesRegex: ${filters.deniedBranchesRegex}`);
+
+  // Check if branch should be skipped due to regex
+  if (filters.deniedBranchesRegex) {
+    const regexMatch = filters.deniedBranchesRegex.test(branch.branchName);
+    console.log(`  deniedBranchesRegex test: ${regexMatch}`);
+    if (regexMatch) {
+      console.log(`  ✅ SKIPPING (denied by regex): ${branch.branchName}`);
+      return skip(`branch ${branch.branchName} is exempted`);
+    }
+  }
+
+  // Check if branch should be skipped due to protection
+  if (filters.exemptProtectedBranches && branch.isProtected) {
+    console.log(`  ✅ SKIPPING (protected branch): ${branch.branchName}`);
+    return skip(`branch ${branch.branchName} is protected`);
+  }
+
+  // Check open PRs
+  if (branch.openPrs) {
+    console.log(`  ✅ SKIPPING (has open PRs): ${branch.branchName}`);
+    return skip(`branch ${branch.branchName} has an open PR`);
+  }
+
+  // Check if allowedBranchesRegex is set and branch doesn't match
+  if (
+    filters.allowedBranchesRegex &&
+    !filters.allowedBranchesRegex.test(branch.branchName)
+  ) {
+    console.log(`  ✅ SKIPPING (not in allowed regex): ${branch.branchName}`);
+    return skip(`branch ${branch.branchName} is not selected`);
+  }
+
+  // Check if author is allowed
+  if (filters.authorsRegex && !filters.authorsRegex.test(branch.author)) {
+    console.log(`  ✅ SKIPPING (author not allowed): ${branch.branchName}`);
+    return skip(`branch author ${branch.author} is not selected`);
+  }
+
+  // Check if already marked stale and past delete date
+  if (alreadyMarkedStale && now > plan.cutoffTime) {
+    console.log(`  ⚠️  REMOVING (marked stale and past cutoff): ${branch.branchName}`);
+    console.log(`    Current time: ${new Date(now).toISOString()}`);
+    console.log(`    Cutoff time: ${new Date(plan.cutoffTime).toISOString()}`);
+    console.log(`    IsProtected: ${branch.isProtected} (THIS SHOULD BE TRUE IF PROTECTED!)`);
+    return { action: "remove" };
+  }
+
+  // Check if stale
+  if (branch.date < filters.staleCutoff) {
+    console.log(`  📌 MARKING AS STALE: ${branch.branchName}`);
+    return {
+      action: "mark stale",
+      cutoffTime: addDays(now, params.daysBeforeBranchDelete).getTime(),
+    };
+  }
+
+  console.log(`  ℹ️  NO ACTION: ${branch.branchName}`);
+  return skip(`branch ${branch.branchName} is not stale`);
+}
+
+async function planBranchActionOld(
   now: number,
   branch: Branch,
   filters: BranchFilters,
@@ -314,11 +386,11 @@ export async function removeStaleBranches(
   )) {
     summary.scanned++;
     const plan = await planBranchAction(
-      now.getTime(),
       branch,
       filters,
-      commitComments,
-      params
+      now.getTime(),
+      false,
+      { cutoffTime: 0 }
     );
     summary[plan.action]++;
     core.startGroup(`${icons[plan.action]} branch ${branch.branchName}`);
