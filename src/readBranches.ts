@@ -223,13 +223,15 @@ export async function* readBranches(
 
       const isProtected = branchInfo.data.protected;
 
+      console.log(`Branch: ${name}, isProtected: ${isProtected}, API response:`, branchInfo.data.protected);
+
       yield {
         date: Date.parse(authoredDate),
         branchName: name,
         prefix,
         commitId: oid,
         author: branchAuthor,
-        isProtected, // <-- from REST API, not from refUpdateRule
+        isProtected,
         openPrs: associatedPullRequests.nodes.length > 0,
       };
     }
